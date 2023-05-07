@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <errno.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -11,6 +12,25 @@
 
 int min(int a, int b) {
     return a < b ? a : b;
+}
+
+void compare(char *first_name, char *second_name, int fraction, int offset) {
+    FILE *first = fopen(first_name, "r");
+    FILE *second = fopen(second_name, "r");
+    fseek(first, offset, SEEK_SET);
+    fseek(second, offset, SEEK_SET);
+    for (int i = 0; i < fraction; i++) {
+        int byte1 = fgetc(first);
+        int byte2 = fgetc(second);
+
+        if (byte1 != byte2) {
+            exit(EXIT_FAILURE);
+        }
+
+        if (byte1 == EOF || byte2 == EOF) break;
+    }
+
+    exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[]) {
@@ -33,11 +53,18 @@ int main(int argc, char *argv[]) {
     int len2 = ftell(second);
     rewind(first);
     rewind(second);
+    fclose(first);
+    fclose(second);
 
+    first = second = NULL;
     printf("%d %d from parent\n", len1, len2);
 
-    pid_t childs[NUM_CHILDS];
+    if (len1 != len2) {
+        printf("%s %s differ\n", argv[1], argv[2]);
+        exit(EXIT_FAILURE);
+    }
 
+    pid_t childs[NUM_CHILDS];
     int fraction = (len1 + NUM_CHILDS - 1) / NUM_CHILDS;  // ceil
     for (int i = 0; i < NUM_CHILDS; i++) {
         childs[i] = fork();
@@ -45,43 +72,25 @@ int main(int argc, char *argv[]) {
         if (childs[i] == -1) {
             perror("fork");
             exit(EXIT_FAILURE);
-        } else if (childs[i] != 0) {
-            fseek(first, min(len1, i * fraction), SEEK_SET);
-            fseek(second, min(len1, i * fraction), SEEK_SET);
-            break;
+        } else if (childs[i] == 0) {
+            compare(argv[1], argv[2], fraction , min(len1, i * fraction));
         }
     }
 
     int wstatus;
+    for (int i = 0; i < NUM_CHILDS; i++) {
+        waitpid(childs[i], &wstatus, 0);
+        int ret_val = WEXITSTATUS(wstatus);
 
-    if (childs[0] != 0) {  // solo l'unico parent dovrebbe avere pipe = 0
-        for (int i = 0; i < NUM_CHILDS; i++) {
-            waitpid(childs[i], &wstatus, 0);
-            int ret_val = WEXITSTATUS(wstatus);
+        if (ret_val == EXIT_FAILURE) {
+            printf("%s %s differ\n", argv[1], argv[2]);
 
-            if (ret_val == EXIT_FAILURE) {
-                printf("%s %s differ\n", argv[1], argv[2]);
-                
-                for (int j = i + 1; j < NUM_CHILDS; j++) {
-                    kill(childs[i], SIGKILL);
-                }
-                exit(EXIT_FAILURE);
-            }
-        }
-    } else {
-        for (int i = 0; i < fraction; i++) {
-            int byte1 = fgetc(first);
-            int byte2 = fgetc(second);
-
-            if (byte1 != byte2) {
-                exit(EXIT_FAILURE);
+            for (int j = i + 1; j < NUM_CHILDS; j++) {
+                kill(childs[i], SIGKILL);
+                waitpid(childs[i], &wstatus, WNOHANG);
             }
 
-            if (byte1 == EOF || byte2 == EOF) break;
+            exit(EXIT_FAILURE);
         }
-        exit(EXIT_SUCCESS);
     }
-
-    fclose(first);
-    fclose(second);
 }

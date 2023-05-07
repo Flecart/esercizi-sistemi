@@ -17,29 +17,29 @@ int main(int argc, char *argv[]) {
     int opt;
     int has_opt = 0;
     while ((opt = getopt(argc, argv, "j:")) != -1) {
-       switch (opt) {
-       case 'j':
-           NUM_CHILDS = atoi(optarg);
-           has_opt = 1;
-           break;
-       default: /* '?' */
-           fprintf(stderr, "Usage: %s [-j threads] file1 file2\n",
-                   argv[0]);
-           exit(EXIT_FAILURE);
-       }
-   }
+        switch (opt) {
+            case 'j':
+                NUM_CHILDS = atoi(optarg);
+                has_opt = 1;
+                break;
+            default: /* '?' */
+                fprintf(stderr, "Usage: %s [-j threads] file1 file2\n",
+                        argv[0]);
+                exit(EXIT_FAILURE);
+        }
+    }
     int non_argv_count = 0;
     char *files[2];
     if (optind < argc) {
         while (optind < argc && non_argv_count < 2) {
-            files[non_argv_count] = argv[optind++];
-            non_argv_count++;
+            files[non_argv_count++] = argv[optind++];
         }
     }
 
     if (non_argv_count != 2) {
         fprintf(stderr, "Usage: %s [-j threads] file1 file2\n",
                 argv[0]);
+        exit(EXIT_FAILURE);
     }
 
     printf("%s file \n", files[0]);
@@ -58,8 +58,8 @@ int main(int argc, char *argv[]) {
     fseek(second, 0, SEEK_END);
     int len1 = ftell(first);
     int len2 = ftell(second);
-    fclose(first);
-    fclose(second);
+//    fclose(first);
+//    fclose(second);
 
     printf("%d %d from parent\n", len1, len2);
     if (len1 != len2) {
@@ -70,28 +70,30 @@ int main(int argc, char *argv[]) {
     pid_t childs[NUM_CHILDS];
 
     int fraction = (len1 + NUM_CHILDS - 1) / NUM_CHILDS;  // ceil
+    int is_parent = 1;
     for (int i = 0; i < NUM_CHILDS; i++) {
         childs[i] = fork();
-
         if (childs[i] == -1) {
             perror("fork");
             exit(EXIT_FAILURE);
-        } else if (childs[i] != 0) {
-            first = fopen(files[0], "r");
-            second = fopen(files[1], "r");
+        } else if (childs[i] == 0) {
+            // figli e genitori altrimenti condividerebbero i file descriptors (anche l'offset diciamo)
+//            first = fopen(files[0], "r");
+//            second = fopen(files[1], "r");
 
             if (first == NULL || second == NULL) {
-                printf("error in opening first or second file\n");
+                printf("error in opening first or second file in children %d\n", i);
                 exit(EXIT_FAILURE);
             }
             fseek(first, min(len1, i * fraction), SEEK_SET);
             fseek(second, min(len1, i * fraction), SEEK_SET);
+            is_parent = 0;
             break;
         }
     }
 
     int wstatus;
-    if (childs[0] != 0) {  // solo l'unico parent dovrebbe avere pipe = 0
+    if (is_parent) { 
         printf("aaa\n");
         for (int i = 0; i < NUM_CHILDS; i++) {
             waitpid(childs[i], &wstatus, 0);
@@ -109,19 +111,24 @@ int main(int argc, char *argv[]) {
             }
         }
     } else {
-        int coso = ftell(first);
-        printf("%d coso, %d\n", coso, fraction);
-
         for (int i = 0; i < fraction; i++) {
+            printf("checking byte %d \n", i + ftell(first));
+            printf("checking byte2: %d \n", i + ftell(second));
             int byte1 = fgetc(first);
             int byte2 = fgetc(second);
+            printf("after check byte %d \n", i + ftell(first));
+            printf("after check byte2: %d \n", i + ftell(second));
 
             if (byte1 != byte2) {
+                fclose(first);
+                fclose(second);
                 exit(EXIT_FAILURE);
             }
 
-            if (feof(first) || feof(second)) break;
+            if (byte2 == EOF || byte1 == EOF) break;
         }
+        fclose(first);
+        fclose(second);
         exit(EXIT_SUCCESS);
     }
 }
