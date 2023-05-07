@@ -57,7 +57,6 @@ int main(int argc, char *argv[]) {
     fclose(second);
 
     first = second = NULL;
-    printf("%d %d from parent\n", len1, len2);
 
     if (len1 != len2) {
         printf("%s %s differ\n", argv[1], argv[2]);
