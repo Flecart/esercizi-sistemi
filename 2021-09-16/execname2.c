@@ -7,7 +7,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
-# define MAX_PATH 2048
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define MAX_PATH 2048
 
 /* Read all available inotify events from the file descriptor 'fd'.
    wd is the table of watch descriptors for the directories in argv.
@@ -15,11 +19,36 @@
    argv is the list of watched directories.
    Entry 0 of wd and argv is unused. */
 
-static void execute(const char *filename) {
+static void execute(const char *pathname, const char *filename) {
+    int fds[2];
+    if (pipe(fds) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
     int wstatus;
     if (fork()) {
+        close(fds[1]);
         wait(&wstatus);
+        int fd = open(pathname, O_WRONLY);
+        if (fd == -1) {
+            perror("open");
+            exit(EXIT_FAILURE);
+        }
+
+        // write poll input to file
+        char buf[4096];
+        int len;
+        while ((len = read(fds[0], buf, sizeof(buf))) > 0) {
+            if (write(fd, buf, len) == -1) {
+                perror("write on created file");
+                exit(EXIT_FAILURE);
+            }
+        }
+        close(fd);
     } else {
+        close(fds[0]);
+        dup2(fds[1], STDOUT_FILENO);
         execlp("/bin/bash", "bash", "-c", filename, NULL);
     }
 }
@@ -71,11 +100,9 @@ handle_events(int fd, int wd, char *dirname)
             if (event->len)
                 printf("%s\n", event->name);
 
-            execute(event->name);
-
             char path_name[MAX_PATH];
             snprintf(path_name, MAX_PATH, "%s/%s", dirname, event->name);
-            unlink(path_name);
+            execute(path_name, event->name);
         }
     }
 }
