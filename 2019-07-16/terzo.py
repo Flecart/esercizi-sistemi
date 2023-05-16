@@ -9,7 +9,7 @@ def find_all_file():
 
     return files;
 
-def same_content(file1: string, file2: string):
+def same_content(file1: str, file2: str):
     if os.path.samefile(file1, file2):
         return True
     if os.path.getsize(file1) != os.path.getsize(file2):
@@ -26,7 +26,7 @@ def same_content(file1: string, file2: string):
             if not b1:
                 return True
 
-def return_same(files: string[]):
+def return_same(files: list[str]):
     same = []
     for file in files:
         for file2 in files:
@@ -35,7 +35,7 @@ def return_same(files: string[]):
                     same.append((file, file2))
     return same
 
-def fix_files(couples: (string, string)[]):
+def fix_files(couples: list[(str, str)]):
     for couple in couples:
         os.remove(couple[0])
         os.link(couple[1], couple[0])
@@ -50,7 +50,7 @@ def main():
         return 1
     
     os.chdir(sys.argv[1])
-    files = find_all_file(sys.argv[1])
+    files = find_all_file()
     same = return_same(files)
     fix_files(same)
 
