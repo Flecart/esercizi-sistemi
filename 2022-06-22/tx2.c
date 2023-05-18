@@ -2,6 +2,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <unistd.h>
+
+void action(int signo, siginfo_t *info, void *context) {
+
+}
+
 
 int main(int argc, char *argv[]) {
     if (sizeof(union sigval) < 8) {
@@ -27,6 +33,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    struct sigaction act;
+    act.sa_sigaction = action;
+    act.sa_flags = 0;
+    sigaction(SIGUSR1, &act, NULL);
     char payload[9];
     while (len > 0) {
         memset(payload, 0, 9);
@@ -38,6 +48,8 @@ int main(int argc, char *argv[]) {
         }
         argv[2] += 8;
         len -= 8;
+
+        pause(); // for ack
     }
 
     ret_val = sigqueue(pid_n, SIGUSR1, (union sigval) {.sival_ptr = (void *) -1});

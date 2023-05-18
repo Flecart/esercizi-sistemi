@@ -9,22 +9,6 @@ char received[2048];
 int received_len = 0;
 
 void action(int signo, siginfo_t *info, void *context) {
-        printf("SignalUSR1 from %d\n", info->si_pid);
-
-        long long value = (long long) info->si_value.sival_ptr;
-        if (value == -1) {
-            printf("End of message\n");
-            printf("Message: %s\n", received);
-            exit(EXIT_SUCCESS);
-        }
-
-        if (received_len + 8 > 2048) {
-            fprintf(stderr, "ERROR: Message too long\n");
-            return;
-        }
-
-        memcpy(received + received_len, &info->si_value.sival_ptr, 8);
-        received_len += 8;
 
 }
 
@@ -43,10 +27,24 @@ int main() {
 
     while (1) {
         int ret_val = sigwaitinfo(&set, &info);
-        printf("hello\n");
         if (ret_val == -1) {
             printf("Cant wait for signal\n");
             return 1;
         }
+
+        long long value = (long long) info.si_value.sival_ptr;
+        if (value == -1) {
+            printf("Message: %s\n", received);
+            exit(EXIT_SUCCESS);
+        }
+
+        if (received_len + 8 > 2048) {
+            fprintf(stderr, "ERROR: Message too long\n");
+            return 1;
+        }
+
+        memcpy(received + received_len, &info.si_value.sival_ptr, 8);
+        received_len += 8;
+        sigqueue(info.si_pid, SIGUSR1, (union sigval) {.sival_ptr = (void *) 1});
     }
 }
