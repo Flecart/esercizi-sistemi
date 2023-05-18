@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/inotify.h>
@@ -8,12 +7,16 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <stdlib.h>
+#include <execs.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
 #define MAX_PATH 2048
-
-static void execute(const char *pathname, const char *filename) {
+#define MAX_ARGS 256
+static void execute(char *pathname, char *filename) {
+    // soluzione con pipe
     int fds[2];
     if (pipe(fds) == -1) {
         perror("pipe");
@@ -43,40 +46,45 @@ static void execute(const char *pathname, const char *filename) {
     } else {
         close(fds[0]);
         dup2(fds[1], STDOUT_FILENO);
-        execlp("/bin/bash", "bash", "-c", filename, NULL);
+        // system_nosh(filename);  // boh non compila, che strano...
+        
+        char *token = strtok(filename, " ");
+        char *args[MAX_ARGS]; int i = 0;
+        while (token != NULL && i < MAX_ARGS) {
+            args[i++] = token;
+            token = strtok(NULL, " ");
+        }
+
+        if (i == MAX_ARGS) {
+            fprintf(stderr, "file has too many arguments\n");
+            exit(EXIT_FAILURE);
+        }
+
+        args[i] = NULL;
+        execvp(args[0], args);
     }
 }
 
 static void handle_events(int fd, int wd, char *dirname) {
-    // see inotify 7
-    /* Some systems cannot read integer variables if they are not
-       properly aligned. On other systems, incorrect alignment may
-       decrease performance. Hence, the buffer used for reading from
-       the inotify file descriptor should have the same alignment as
-       struct inotify_event. */
-
-    char buf[4096]
-        __attribute__ ((aligned(__alignof__(struct inotify_event))));
-    const struct inotify_event *event;
+    char buf[4096];
+    struct inotify_event *event;
     ssize_t len;
 
     /* Loop while events can be read from inotify file descriptor. */
     for (;;) {
         /* Read some events. */
         len = read(fd, buf, sizeof(buf));
-        if (len == -1 && errno != EAGAIN) {
+        if (len == -1) {
             perror("read");
             exit(EXIT_FAILURE);
-        }
-
-        if (len <= 0)
+        } else if (len <= 0)
             break;
 
         /* Loop over all events in the buffer */
         for (char *ptr = buf; ptr < buf + len;
                 ptr += sizeof(struct inotify_event) + event->len) {
 
-            event = (const struct inotify_event *) ptr;
+            event = (struct inotify_event *) ptr;
 
             /* Print event type */
             if (event->mask & IN_CREATE)
@@ -97,16 +105,12 @@ static void handle_events(int fd, int wd, char *dirname) {
 int main(int argc, char* argv[]) {
     char *dirname = argv[1];
     char buf;
-    int fd, poll_num;
-    nfds_t nfds;
-    struct pollfd fds[2];
+    int fd;
 
     if (argc != 2) {
         printf("Usage: %s <dirname>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-
-    printf("Press ENTER key to terminate.\n");
 
     /* Create the file descriptor for accessing the inotify API */
     fd = inotify_init();
@@ -118,52 +122,11 @@ int main(int argc, char* argv[]) {
     /* Allocate memory for watch descriptors */
     int wd = inotify_add_watch(fd, dirname, IN_CREATE | IN_MOVED_TO);
     if (wd == -1) {
-        fprintf(stderr, "Cannot watch '%s': %s\n",
-                argv[1], strerror(errno));
+        fprintf(stderr, "Cannot watch '%s': %s\n", argv[1], strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    /* Prepare for polling */
-    nfds = 2;
-
-    /* Console input */
-    fds[0].fd = STDIN_FILENO;
-    fds[0].events = POLLIN;
-
-    /* Inotify input */
-    fds[1].fd = fd;
-    fds[1].events = POLLIN;
-
-    /* Wait for events and/or terminal input */
-    printf("Listening for events.\n");
-    while (1) {
-        poll_num = poll(fds, nfds, -1);
-        if (poll_num == -1) {
-            if (errno == EINTR)
-                continue;
-            perror("poll");
-            exit(EXIT_FAILURE);
-        }
-
-        if (poll_num > 0) {
-            if (fds[0].revents & POLLIN) {
-                /* Console input is available. Empty stdin and quit */
-                while (read(STDIN_FILENO, &buf, 1) > 0 && buf != '\n')
-                    continue;
-                break;
-            }
-
-            if (fds[1].revents & POLLIN) {
-                /* Inotify events are available */
-                handle_events(fd, wd, dirname);
-            }
-        }
-    }
-
-    printf("Listening for events stopped.\n");
-
-    /* Close inotify file descriptor */
-    close(fd);
+    handle_events(fd, wd, dirname);
     exit(EXIT_SUCCESS);
 }
 
