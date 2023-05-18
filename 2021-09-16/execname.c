@@ -9,12 +9,6 @@
 #include <sys/wait.h>
 # define MAX_PATH 2048
 
-/* Read all available inotify events from the file descriptor 'fd'.
-   wd is the table of watch descriptors for the directories in argv.
-   argc is the length of wd and argv.
-   argv is the list of watched directories.
-   Entry 0 of wd and argv is unused. */
-
 static void execute(const char *filename) {
     int wstatus;
     if (fork()) {
@@ -24,9 +18,8 @@ static void execute(const char *filename) {
     }
 }
 
-    static void
-handle_events(int fd, int wd, char *dirname)
-{
+static void handle_events(int fd, int wd, char *dirname) {
+    // see inotify(7) for this.
     /* Some systems cannot read integer variables if they are not
        properly aligned. On other systems, incorrect alignment may
        decrease performance. Hence, the buffer used for reading from
@@ -38,23 +31,15 @@ handle_events(int fd, int wd, char *dirname)
     const struct inotify_event *event;
     ssize_t len;
 
-    /* Loop while events can be read from inotify file descriptor. */
-
     for (;;) {
-        /* Read some events. */
         len = read(fd, buf, sizeof(buf));
         if (len == -1 && errno != EAGAIN) {
             perror("read");
             exit(EXIT_FAILURE);
         }
 
-        /* If the nonblocking read() found no events to read, then
-           it returns -1 with errno set to EAGAIN. In that case,
-           we exit the loop. */
         if (len <= 0)
             break;
-
-        /* Loop over all events in the buffer */
 
         for (char *ptr = buf; ptr < buf + len;
                 ptr += sizeof(struct inotify_event) + event->len) {
@@ -62,7 +47,6 @@ handle_events(int fd, int wd, char *dirname)
             event = (const struct inotify_event *) ptr;
 
             /* Print event type */
-
             if (event->mask & IN_CREATE)
                 printf("IN_CREATE: ");
             if (event->mask & IN_MOVED_TO)
@@ -82,9 +66,7 @@ handle_events(int fd, int wd, char *dirname)
 
 
 
-    int
-main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
 
     char *dirname = argv[1];
     char buf;
@@ -100,7 +82,6 @@ main(int argc, char* argv[])
     printf("Press ENTER key to terminate.\n");
 
     /* Create the file descriptor for accessing the inotify API */
-
     fd = inotify_init();
     if (fd == -1) {
         perror("inotify_init");
@@ -108,7 +89,6 @@ main(int argc, char* argv[])
     }
 
     /* Allocate memory for watch descriptors */
-
     int wd = inotify_add_watch(fd, dirname, IN_CREATE | IN_MOVED_TO);
     if (wd == -1) {
         fprintf(stderr, "Cannot watch '%s': %s\n",
@@ -117,11 +97,9 @@ main(int argc, char* argv[])
     }
 
     /* Prepare for polling */
-
     nfds = 2;
 
     /* Console input */
-
     fds[0].fd = STDIN_FILENO;
     fds[0].events = POLLIN;
 
@@ -160,7 +138,6 @@ main(int argc, char* argv[])
     printf("Listening for events stopped.\n");
 
     /* Close inotify file descriptor */
-
     close(fd);
     exit(EXIT_SUCCESS);
 }
